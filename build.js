@@ -23,6 +23,9 @@ writeFileSync(join(DIST, 'status.json'), JSON.stringify(buildStatusJson(store, n
 for (const i of store.incidents) writeFileSync(join(DIST, 'incidents', `${i.id}.html`), renderIncidentPage(i))
 for (const m of store.maintenance) writeFileSync(join(DIST, 'maintenance', `${m.id}.html`), renderMaintenancePage(m))
 copyFileSync(join(ROOT, 'templates', 'page.css'), join(DIST, 'page.css'))
+mkdirSync(join(DIST, 'fonts'), { recursive: true })
+copyFileSync(join(ROOT, 'templates', 'fonts', 'dmsans-latin.woff2'), join(DIST, 'fonts', 'dmsans-latin.woff2'))
+copyFileSync(join(ROOT, 'templates', 'logo-512.png'), join(DIST, 'logo-512.png'))
 // Custom domain for GitHub Pages; .nojekyll stops Pages ignoring dotfiles/underscores.
 writeFileSync(join(DIST, 'CNAME'), 'status.morechard.com\n')
 writeFileSync(join(DIST, '.nojekyll'), '')
