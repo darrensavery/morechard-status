@@ -40,9 +40,16 @@ jobs:
 
       - name: Export parents from production D1
         run: |
-          npx --yes wrangler@4 d1 execute morechard --remote --json \
-            --command="SELECT u.email, f.has_lifetime_license FROM users u JOIN families f ON f.id = u.family_id WHERE u.role = 'parent' AND u.email IS NOT NULL AND f.deleted_at IS NULL" \
+          # Database by UUID: name lookup only works inside a wrangler.toml project.
+          # Parents are identified via family_roles (users has no role column).
+          # Verified emails only: unverified ones are likely typos and would bounce.
+          npx --yes wrangler@4 d1 execute 5e8b4cd3-4807-43e4-bd84-4969da6e402c --remote --json \
+            --command="SELECT DISTINCT u.email, f.has_lifetime_license FROM users u JOIN family_roles fr ON fr.user_id = u.id AND fr.family_id = u.family_id AND fr.role = 'parent' JOIN families f ON f.id = u.family_id WHERE u.email IS NOT NULL AND u.email_verified = 1 AND f.deleted_at IS NULL AND COALESCE(f.is_demo, 0) = 0" \
             > "$RUNNER_TEMP/parents.json"
+
+      - name: Show export errors, if any
+        if: failure()
+        run: cat "$RUNNER_TEMP/parents.json" || true
 
       - name: Sync Resend audiences
         run: node scripts/sync-audience.js "$RUNNER_TEMP/parents.json"
