@@ -1,7 +1,32 @@
 [
-  { "id": "api",       "name": "API",                  "description": "The service the app talks to",            "status": "operational" },
-  { "id": "app",       "name": "Parent and child app", "description": "app.morechard.com and the installed app", "status": "operational" },
-  { "id": "marketing", "name": "morechard.com",        "description": "Website and UK Chore Index",              "status": "operational" },
-  { "id": "email",     "name": "Email delivery",       "description": "Sign-in links and notifications",         "status": "operational" },
-  { "id": "payments",  "name": "Payments",             "description": "Checkout and licence activation",         "status": "operational" }
+  {
+    "id": "api",
+    "name": "API",
+    "description": "The service the app talks to",
+    "status": "operational"
+  },
+  {
+    "id": "app",
+    "name": "Parent and child app",
+    "description": "app.morechard.com and the installed app",
+    "status": "operational"
+  },
+  {
+    "id": "marketing",
+    "name": "morechard.com",
+    "description": "Website and UK Chore Index",
+    "status": "operational"
+  },
+  {
+    "id": "email",
+    "name": "Email delivery",
+    "description": "Sign-in links and notifications",
+    "status": "operational"
+  },
+  {
+    "id": "payments",
+    "name": "Payments",
+    "description": "Checkout and licence activation",
+    "status": "operational"
+  }
 ]
