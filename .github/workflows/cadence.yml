@@ -1,0 +1,61 @@
+# Every 10 minutes: nag the operator about overdue incident updates (GitHub
+# issue + email), fire maintenance reminders / start / end-of-window nag /
+# auto-complete, and retry any broadcast that failed earlier. Exit code 3
+# from tick.js means "nothing changed" and skips the commit.
+#
+# This repo is public, so these runs cost no Actions minutes.
+name: Cadence tick
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: data
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      STATUS_OPERATOR_EMAIL: ${{ vars.STATUS_OPERATOR_EMAIL }}
+      STATUS_FORM_URL: https://github.com/${{ github.repository }}/actions/workflows/post.yml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - id: tick
+        run: |
+          set +e
+          node scripts/tick.js
+          code=$?
+          set -e
+          if [ "$code" = "3" ]; then echo "changed=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "$code" != "0" ]; then exit "$code"; fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and redeploy
+        if: steps.tick.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data; then echo "no data change"; exit 0; fi
+          git config user.name "morechard-status[bot]"
+          git config user.email "status@morechard.com"
+          git add data
+          git commit -m "status: cadence tick"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          gh workflow run deploy.yml --ref main

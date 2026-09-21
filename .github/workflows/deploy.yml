@@ -1,0 +1,43 @@
+# Builds the page and publishes it to GitHub Pages (status.morechard.com).
+#
+# GitHub Pages is deliberately NOT Cloudflare: the whole point of the status
+# page is to stay up when Morechard's own stack (Pages, Workers, D1) is down.
+# The only Cloudflare involvement is an unproxied CNAME in the morechard.com zone.
+name: Deploy status page
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test
+        run: node --test
+      - name: Build
+        run: node build.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

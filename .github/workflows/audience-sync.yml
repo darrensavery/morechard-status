@@ -1,0 +1,59 @@
+# Nightly: mirror every parent email (and the paying subset,
+# families.has_lifetime_license = 1) from Morechard's production D1 into two
+# Resend Audiences, so incident/maintenance broadcasts never need D1 to be up.
+#
+# This is the ONLY workflow here that touches Cloudflare, and it does so
+# read-only when things are healthy, never during an incident. wrangler is
+# run standalone against the database name; no wrangler.toml is needed.
+#
+# Secrets: CLOUDFLARE_STATUS_SYNC_TOKEN (production account, D1:Read only,
+# no Workers, no zone access), CLOUDFLARE_ACCOUNT_ID, RESEND_API_KEY.
+name: Audience sync
+
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_STATUS_SYNC_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Export parents from production D1
+        run: |
+          npx --yes wrangler@4 d1 execute morechard --remote --json \
+            --command="SELECT u.email, f.has_lifetime_license FROM users u JOIN families f ON f.id = u.family_id WHERE u.role = 'parent' AND u.email IS NOT NULL AND f.deleted_at IS NULL" \
+            > "$RUNNER_TEMP/parents.json"
+
+      - name: Sync Resend audiences
+        run: node scripts/sync-audience.js "$RUNNER_TEMP/parents.json"
+
+      - name: Commit audiences.json (first run only)
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- data/audiences.json)" ]; then echo "audience ids unchanged"; exit 0; fi
+          git config user.name "morechard-status[bot]"
+          git config user.email "status@morechard.com"
+          git add data/audiences.json
+          git commit -m "status: record Resend audience ids"
+          git pull --rebase origin main
+          git push origin HEAD:main

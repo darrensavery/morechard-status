@@ -1,0 +1,113 @@
+# Operator form. Usable from the GitHub mobile app:
+# Actions -> "Post status update" -> Run workflow.
+#
+#   open       title, impact (minor|major|critical), components, eta, body
+#   update     id, status (investigating|identified|monitoring), [eta], body
+#   resolve    id, body, summary
+#   schedule   title, components, starts_at, ends_at, impact (one sentence), body
+#   extend     id, ends_at
+#   reschedule id, starts_at, ends_at
+#   cancel     id
+#
+# Writes data/, commits to main, sends the Resend broadcast, redeploys the page.
+# Nothing here touches Cloudflare, D1 or the Morechard Worker.
+name: Post status update
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'What to do'
+        type: choice
+        required: true
+        options: [open, update, resolve, schedule, extend, reschedule, cancel]
+      id:
+        description: 'Incident or maintenance id (every command except open and schedule)'
+        type: string
+      title:
+        description: 'Title (open, schedule)'
+        type: string
+      impact:
+        description: 'open: minor | major | critical.  schedule: one sentence, e.g. "Morechard will be unavailable for up to 60 minutes."'
+        type: string
+      status:
+        description: 'update: investigating | identified | monitoring'
+        type: string
+      components:
+        description: 'Comma-separated: api,app,marketing,email,payments'
+        type: string
+      eta:
+        description: 'Incident ETA, UTC ISO e.g. 2026-09-21T20:30:00Z (required on open, optional on update)'
+        type: string
+      starts_at:
+        description: 'Maintenance start, UTC ISO (schedule, reschedule). Must be at least 48h away.'
+        type: string
+      ends_at:
+        description: 'Maintenance end, UTC ISO (schedule, extend, reschedule)'
+        type: string
+      body:
+        description: 'Text shown to customers (open, update, resolve, schedule)'
+        type: string
+      summary:
+        description: 'resolve: what happened, one to three sentences'
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: data
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      STATUS_OPERATOR_EMAIL: ${{ vars.STATUS_OPERATOR_EMAIL }}
+      STATUS_FORM_URL: https://github.com/${{ github.repository }}/actions/workflows/post.yml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Apply command
+        env:
+          IN_ID: ${{ inputs.id }}
+          IN_TITLE: ${{ inputs.title }}
+          IN_IMPACT: ${{ inputs.impact }}
+          IN_STATUS: ${{ inputs.status }}
+          IN_COMPONENTS: ${{ inputs.components }}
+          IN_ETA: ${{ inputs.eta }}
+          IN_STARTS: ${{ inputs.starts_at }}
+          IN_ENDS: ${{ inputs.ends_at }}
+          IN_BODY: ${{ inputs.body }}
+          IN_SUMMARY: ${{ inputs.summary }}
+        run: |
+          node scripts/post.js "${{ inputs.command }}" \
+            "id=$IN_ID" "title=$IN_TITLE" "impact=$IN_IMPACT" "status=$IN_STATUS" \
+            "components=$IN_COMPONENTS" "eta=$IN_ETA" "starts_at=$IN_STARTS" "ends_at=$IN_ENDS" \
+            "body=$IN_BODY" "summary=$IN_SUMMARY"
+
+      - name: Commit and redeploy
+        env:
+          MSG: 'status: ${{ inputs.command }} ${{ inputs.id || inputs.title }}'
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data; then echo "no data change"; exit 0; fi
+          git config user.name "morechard-status[bot]"
+          git config user.email "status@morechard.com"
+          git add data
+          git commit -m "$MSG"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          # Pushes made with GITHUB_TOKEN do not fire on:push workflows, so
+          # dispatch the Pages deploy explicitly (workflow_dispatch is allowed).
+          gh workflow run deploy.yml --ref main
