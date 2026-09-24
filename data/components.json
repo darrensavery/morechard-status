@@ -3,7 +3,7 @@
     "id": "api",
     "name": "API",
     "description": "The service the app talks to",
-    "status": "maintenance"
+    "status": "operational"
   },
   {
     "id": "app",
